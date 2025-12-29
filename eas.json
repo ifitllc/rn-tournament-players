@@ -1,0 +1,40 @@
+{
+  "cli": {
+    "version": ">= 13.2.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "333073812709-n6n0mlheepckq6vka0as7f8jn4ps1epr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID": "1_Db4qJMQ-TWenhkbu9tVINt1K7xtzrbO"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "333073812709-n6n0mlheepckq6vka0as7f8jn4ps1epr.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID": "1_Db4qJMQ-TWenhkbu9tVINt1K7xtzrbO"
+      }
+    },
+    "production": {
+      "ios": {
+        "env": {
+          "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "333073812709-6gfj6n431ve0698u3h4g3kings5ld2s5.apps.googleusercontent.com",
+          "EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID": "1_Db4qJMQ-TWenhkbu9tVINt1K7xtzrbO"
+        }
+      },
+      "android": {
+        "env": {
+          "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "333073812709-0dpu5urrrmampe8uph3ov9lclba6ucvo.apps.googleusercontent.com",
+          "EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID": "1_Db4qJMQ-TWenhkbu9tVINt1K7xtzrbO"
+        }
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

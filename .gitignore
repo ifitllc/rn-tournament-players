@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+.expo-shared/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+
+# Bundler / Metro caches
+metro-cache/
+*.log
+
+# Build outputs
+android/
+ios/
+build/
+
+# Misc
+.env
+.env.*
+.idea/
+.vscode/
