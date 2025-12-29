@@ -3,7 +3,7 @@ export default {
     name: "Tournament Players",
     slug: "tournament-players",
     owner: "fanyang_us",
-    version: "1.0.0",
+    version: "1.1.0",
     orientation: "portrait",
     scheme: "rn-tournament-players",
     icon: "./assets/icon.png",
@@ -17,7 +17,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.fanyang.tournamentplayers",
-      buildNumber: "2",
+      buildNumber: "3",
       infoPlist: {
         NSCameraUsageDescription: "This app needs camera access to take player photos for the tournament roster.",
         NSPhotoLibraryUsageDescription: "This app needs photo library access to save and manage player photos."
@@ -29,7 +29,7 @@ export default {
         backgroundColor: "#0f172a"
       },
       package: "com.fanyang.tournamentplayers",
-      versionCode: 2,
+      versionCode: 3,
       permissions: [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
