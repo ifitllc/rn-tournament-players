@@ -27,3 +27,8 @@ build/
 .env.*
 .idea/
 .vscode/
+
+# Sensitive configuration files
+google-services.json
+
+build-*
