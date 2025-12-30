@@ -1,6 +1,6 @@
 # Environment Variables Setup
 
-This project uses environment variables to securely manage sensitive configuration like Google OAuth credentials.
+This project uses environment variables to configure Supabase storage for player photos.
 
 ## Local Development Setup
 
@@ -14,14 +14,12 @@ cp .env.example .env
 
 ### 2. Configure Variables
 
-Edit `.env` and add your Google Client ID:
+Edit `.env` with your Supabase project details:
 
 ```bash
-# Google OAuth Configuration
-EXPO_PUBLIC_GOOGLE_CLIENT_ID=YOUR_ACTUAL_CLIENT_ID.apps.googleusercontent.com
-
-# Google Drive Configuration (optional - has default)
-EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID=1_Db4qJMQ-TWenhkbu9tVINt1K7xtzrbO
+EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+EXPO_PUBLIC_SUPABASE_BUCKET=tournament-players
 ```
 
 ### 3. Start Development Server
@@ -30,7 +28,7 @@ EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID=1_Db4qJMQ-TWenhkbu9tVINt1K7xtzrbO
 npm start
 ```
 
-Expo will automatically load variables prefixed with `EXPO_PUBLIC_` from your `.env` file.
+Expo automatically loads variables prefixed with `EXPO_PUBLIC_` from your `.env` file.
 
 ## EAS Build Setup
 
@@ -61,9 +59,9 @@ npm install -g eas-cli
 eas login
 
 # Set the secrets
-eas secret:create --scope project --name EXPO_PUBLIC_GOOGLE_CLIENT_ID --value "YOUR_CLIENT_ID.apps.googleusercontent.com" --type string
-
-eas secret:create --scope project --name EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID --value "YOUR_FOLDER_ID" --type string
+eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value "https://your-project.supabase.co" --type string
+eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "your-anon-key" --type string
+eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_BUCKET --value "tournament-players" --type string
 ```
 
 ### Verify Secrets
@@ -94,16 +92,17 @@ eas build --profile production --platform android
 
 | Variable | Required | Description | Default |
 |----------|----------|-------------|---------|
-| `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | Yes | Google OAuth 2.0 Client ID | None |
-| `EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID` | No | Google Drive folder ID for photos | `1_Db4qJMQ-TWenhkbu9tVINt1K7xtzrbO` |
+| EXPO_PUBLIC_SUPABASE_URL | Yes | Supabase project URL | None |
+| EXPO_PUBLIC_SUPABASE_ANON_KEY | Yes | Supabase anonymous key | None |
+| EXPO_PUBLIC_SUPABASE_BUCKET | Yes | Supabase storage bucket for photos | tournament-players |
 
 ## How It Works
 
 ### Local Development
 1. Variables are loaded from `.env` file
-2. Expo automatically includes `EXPO_PUBLIC_*` variables in the app
+2. Expo includes `EXPO_PUBLIC_*` variables in the app bundle
 3. Access via `process.env.EXPO_PUBLIC_VARIABLE_NAME`
-4. Also available via `Constants.expoConfig.extra` for runtime access
+4. Also available via `Constants.expoConfig.extra`
 
 ### EAS Builds
 1. Variables are stored as EAS secrets
@@ -114,22 +113,20 @@ eas build --profile production --platform android
 
 ✅ **DO:**
 - Use `.env` for local development
-- Add `.env` to `.gitignore` (already done)
+- Keep `.env` out of version control (already ignored)
 - Use EAS secrets for production builds
-- Rotate credentials regularly
-- Use different Client IDs for development and production
+- Rotate Supabase keys periodically
 
 ❌ **DON'T:**
-- Commit `.env` file to git
-- Share your `.env` file
+- Commit `.env` to git
+- Share your Supabase anon key publicly
 - Hard-code credentials in source code
-- Use production credentials in development
 
 ## Troubleshooting
 
-### "Client ID not configured" Error
-- Check that `.env` file exists
-- Verify `EXPO_PUBLIC_GOOGLE_CLIENT_ID` is set
+### "Supabase URL not configured" Error
+- Check that `.env` exists
+- Verify `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are set
 - Restart the development server (`npm start`)
 
 ### EAS Build Fails with Missing Variables
@@ -150,16 +147,15 @@ eas build --profile production --platform android
 
 ### EAS Builds
 ```bash
-# Update existing secret (use --force to overwrite)
-eas secret:create --scope project --name EXPO_PUBLIC_GOOGLE_CLIENT_ID --value "NEW_VALUE" --type string --force
+# Update existing secrets (use --force to overwrite)
+eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value "NEW_URL" --type string --force
 
-# Or delete and recreate
-eas secret:delete --scope project --name EXPO_PUBLIC_GOOGLE_CLIENT_ID
-eas secret:create --scope project --name EXPO_PUBLIC_GOOGLE_CLIENT_ID --value "NEW_VALUE" --type string
+eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "NEW_ANON_KEY" --type string --force
+
+eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_BUCKET --value "NEW_BUCKET" --type string --force
 ```
 
 ## Additional Resources
 
 - [Expo Environment Variables Guide](https://docs.expo.dev/guides/environment-variables/)
 - [EAS Secrets Documentation](https://docs.expo.dev/build-reference/variables/)
-- [Google OAuth Setup Guide](./oauth-setup-guide.md)

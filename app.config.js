@@ -5,7 +5,7 @@ export default {
     owner: "fanyang_us",
     version: "1.1.0",
     orientation: "portrait",
-    scheme: "rn-tournament-players",
+    scheme: ["rn-tournament-players", "com.fanyang.tournamentplayers"],
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
     splash: {
@@ -44,8 +44,8 @@ export default {
       eas: {
         projectId: "4f035597-cc6b-43c5-bb85-0de458045eec"
       },
-      googleClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-      driveFolderId: process.env.EXPO_PUBLIC_GOOGLE_DRIVE_FOLDER_ID
+      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
+      supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
     },
     plugins: [
       [

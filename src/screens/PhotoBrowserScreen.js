@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, Image, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { listLocalPhotos } from '../storage/photoStore.js';
+import * as FileSystem from 'expo-file-system/legacy';
+import { listLocalPhotos, clearLocalPhotos } from '../storage/photoStore.js';
 
-export default function PhotoBrowserScreen({ onClose }) {
+export default function PhotoBrowserScreen({ onClose, onCleared = () => {} }) {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [clearing, setClearing] = useState(false);
+  const [deletingEmpty, setDeletingEmpty] = useState(false);
 
   useEffect(() => {
     loadPhotos();
@@ -26,6 +29,63 @@ export default function PhotoBrowserScreen({ onClose }) {
       Alert.alert('Error', 'Failed to load photos: ' + error.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleClearPhotos() {
+    Alert.alert(
+      'Clear Local Photos',
+      'This deletes all cached photos on this device. Remote copies stay in Supabase.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setClearing(true);
+              await clearLocalPhotos();
+              await loadPhotos();
+              onCleared();
+              Alert.alert('Cleared', 'Local photos removed on this device.');
+            } catch (err) {
+              console.error('Failed to clear photos:', err);
+              Alert.alert('Error', 'Failed to clear local photos: ' + err.message);
+            } finally {
+              setClearing(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  async function handleDeleteEmpty() {
+    if (photos.length === 0) return;
+    setDeletingEmpty(true);
+    try {
+      const infos = await Promise.all(
+        photos.map(async (p) => {
+          const info = await FileSystem.getInfoAsync(p);
+          return { path: p, exists: info.exists, size: info.size || 0, isDir: info.isDirectory };
+        })
+      );
+      const empties = infos
+        .filter((i) => !i.exists || i.isDir || i.size <= 512) // treat missing, directories, or tiny files as empty/corrupt
+        .map((i) => i.path);
+      if (empties.length === 0) {
+        Alert.alert('No empty files', 'Did not find any zero-byte or tiny files.');
+        return;
+      }
+      await Promise.all(empties.map((p) => FileSystem.deleteAsync(p, { idempotent: true })));
+      await loadPhotos();
+      onCleared();
+      Alert.alert('Deleted', `Removed ${empties.length} empty photos.`);
+    } catch (err) {
+      console.error('Failed to delete empty photos:', err);
+      Alert.alert('Error', 'Failed to delete empty photos: ' + err.message);
+    } finally {
+      setDeletingEmpty(false);
     }
   }
 
@@ -73,10 +133,21 @@ export default function PhotoBrowserScreen({ onClose }) {
         </Pressable>
       </View>
 
+      <View style={styles.toolbar}>
+        <View style={styles.toolbarRow}>
+          <Pressable style={[styles.toolbarButton, clearing && styles.toolbarButtonDisabled]} onPress={handleClearPhotos} disabled={clearing}>
+            <Text style={styles.toolbarButtonText}>{clearing ? 'Clearing…' : 'Delete All'}</Text>
+          </Pressable>
+          <Pressable style={[styles.toolbarButton, deletingEmpty && styles.toolbarButtonDisabled]} onPress={handleDeleteEmpty} disabled={deletingEmpty}>
+            <Text style={styles.toolbarButtonText}>{deletingEmpty ? 'Deleting…' : 'Delete Empty'}</Text>
+          </Pressable>
+        </View>
+      </View>
+
       {photos.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>No photos found</Text>
-          <Text style={styles.emptySubtext}>Download photos from Google Drive or capture new ones</Text>
+          <Text style={styles.emptySubtext}>Sync with Supabase or capture new photos</Text>
         </View>
       ) : (
         <FlatList
@@ -151,6 +222,29 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 12,
     fontSize: 16,
+  },
+  toolbar: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  toolbarButton: {
+    backgroundColor: '#334155',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    flex: 1,
+  },
+  toolbarButtonDisabled: {
+    backgroundColor: '#1f2937',
+  },
+  toolbarButtonText: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+    fontSize: 14,
   },
   emptyContainer: {
     flex: 1,

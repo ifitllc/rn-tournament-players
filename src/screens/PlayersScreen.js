@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View, Dimensions, Animated, PanResponder } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View, Dimensions, Animated, PanResponder, Alert } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,7 +8,7 @@ import { composeImageFileName } from '../helpers/utils.js';
 import { getActiveTournamentName } from '../helpers/utils.js';
 import { photoExists, savePhoto } from '../storage/photoStore.js';
 import useBackgroundSync from '../hooks/useBackgroundSync.js';
-import { uploadToDrive } from '../services/gdriveService.native.js';
+import { uploadAllPhotos, uploadSinglePhoto, hasSupabaseConfig } from '../services/supabaseService.js';
 import SettingsScreen from './SettingsScreen.js';
 import PhotoBrowserScreen from './PhotoBrowserScreen.js';
 
@@ -59,7 +59,7 @@ export default function PlayersScreen() {
   ).current;
   const cropPositionRef = useRef({ x: 0, y: 0 });
   const imageSize = useRef({ width: 0, height: 0 });
-  const { syncOnce } = useBackgroundSync(null);
+  const { syncOnce } = useBackgroundSync(uploadSinglePhoto);
 
   useEffect(() => {
     loadPlayers();
@@ -264,8 +264,12 @@ export default function PlayersScreen() {
 
   async function handleSyncNow() {
     try {
+      if (!hasSupabaseConfig()) {
+        Alert.alert('Supabase not configured', 'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env, then reload the app.');
+        return;
+      }
       console.log('Starting manual sync...');
-      await uploadToDrive();
+      await uploadAllPhotos();
       console.log('Sync completed successfully');
     } catch (err) {
       console.error('Sync failed:', err.message);

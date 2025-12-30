@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert, Modal } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getTournaments, getPlayers } from '../services/omnipongService.js';
-import { downloadFromDrive, uploadToDrive } from '../services/gdriveService.native.js';
+import { downloadMissingPhotos, uploadAllPhotos, hasSupabaseConfig } from '../services/supabaseService.js';
 import { listLocalPhotos, getPendingUploads } from '../storage/photoStore.js';
-import GoogleDriveAuth from '../components/GoogleDriveAuth.js';
+import PhotoBrowserScreen from './PhotoBrowserScreen.js';
 
 const SELECTED_TOURNAMENT_KEY = '@selected_tournament';
 const MANUAL_PLAYERS_KEY = '@manual_players';
@@ -21,7 +21,9 @@ export default function SettingsScreen({ onBack }) {
   const [localPhotoCount, setLocalPhotoCount] = useState(0);
   const [pendingUploadCount, setPendingUploadCount] = useState(0);
   const [tournamentSectionExpanded, setTournamentSectionExpanded] = useState(false);
-  const [authSectionExpanded, setAuthSectionExpanded] = useState(false);
+  const [storageSectionExpanded, setStorageSectionExpanded] = useState(false);
+  const supabaseReady = hasSupabaseConfig();
+  const [showPhotoBrowser, setShowPhotoBrowser] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -150,67 +152,48 @@ export default function SettingsScreen({ onBack }) {
 
   async function handleBidirectionalSync() {
     try {
-      setSyncing(true);
-      setSyncProgress('Initializing...');
-      
-      // Check if we have a token first
-      const token = await AsyncStorage.getItem('@gdrive_access_token');
-      if (!token) {
-        Alert.alert(
-          'Authentication Required',
-          'Please authenticate with Google Drive first using the button above, or enter a manual token.',
-          [{ text: 'OK' }]
-        );
+      if (!supabaseReady) {
+        Alert.alert('Supabase not configured', 'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env, then reload the app.');
         return;
       }
-      
-      // Get current tournament players
+
+      setSyncing(true);
+      setSyncProgress('Preparing player list...');
+
       let currentPlayerNames = [];
       if (selectedTournament) {
         try {
           const players = await getPlayers(selectedTournament.omnipongUrl);
-          currentPlayerNames = players.map(p => p.name);
+          currentPlayerNames = players.map((p) => p.name);
           console.log(`Syncing for ${currentPlayerNames.length} tournament players`);
         } catch (err) {
           console.warn('Could not load tournament players, syncing all:', err.message);
         }
       }
-      
-      // Download first - get photos from Google Drive that we don't have locally
-      // Local versions always take precedence (won't overwrite existing local files)
-      // Only download for current tournament players if we have them
-      const downloadResult = await downloadFromDrive(
+
+      setSyncProgress('Downloading from Supabase...');
+      const downloadResult = await downloadMissingPhotos(
         (progress) => {
           setSyncProgress(progress);
         },
         currentPlayerNames.length > 0 ? currentPlayerNames : null
       );
-      
-      // Upload local photos to Google Drive
-      const uploadResult = await uploadToDrive((progress) => {
+
+      setSyncProgress('Uploading local photos...');
+      const uploadResult = await uploadAllPhotos((progress) => {
         setSyncProgress(progress);
       });
-      
+
       setSyncProgress('');
       Alert.alert(
         'Sync Complete',
-        `Downloaded: ${downloadResult.downloaded || 0}\nUploaded: ${uploadResult.uploaded || 0}\nSkipped: ${downloadResult.skipped + uploadResult.skipped || 0}\nFailed: ${(uploadResult.failed || 0) + (downloadResult.failed || 0)}`
+        `Downloaded: ${downloadResult.downloaded || 0}\nUploaded: ${uploadResult.uploaded || 0}\nSkipped: ${(downloadResult.skipped || 0)}\nFailed: ${(uploadResult.failed || 0) + (downloadResult.failed || 0)}`
       );
-      
-      // Refresh photo stats after sync
+
       await loadPhotoStats();
     } catch (err) {
       console.error('Sync failed:', err.message);
-      
-      if (err.message.includes('401')) {
-        Alert.alert(
-          'Token Expired',
-          'Your access token has expired. Please:\n\n1. Use the Refresh Token button above if available\n2. Or authenticate again\n3. Or get a new token from Google OAuth Playground',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert('Sync Error', err.message);
-      }
+      Alert.alert('Sync Error', err.message);
     } finally {
       setSyncing(false);
       setSyncProgress('');
@@ -337,25 +320,35 @@ export default function SettingsScreen({ onBack }) {
           )}
         </View>
 
-        {/* Section 2: Google Drive Auth */}
+        {/* Section 2: Supabase Storage */}
         <View style={styles.section}>
           <Pressable 
             style={styles.sectionHeader}
-            onPress={() => setAuthSectionExpanded(!authSectionExpanded)}
+            onPress={() => setStorageSectionExpanded(!storageSectionExpanded)}
           >
-            <Text style={styles.sectionTitle}>Google Drive Authentication</Text>
-            <Text style={styles.collapseIcon}>{authSectionExpanded ? '▼' : '▶'}</Text>
+            <Text style={styles.sectionTitle}>Supabase Storage</Text>
+            <Text style={styles.collapseIcon}>{storageSectionExpanded ? '▼' : '▶'}</Text>
           </Pressable>
           
-          {authSectionExpanded && (
+          {storageSectionExpanded && (
             <>
               <Text style={styles.sectionDescription}>
-                Authenticate with Google Drive to enable photo sync
+                Photos sync to the Supabase bucket "tournament-players". Make sure the bucket allows read/write with your anon key.
               </Text>
-              
-              <GoogleDriveAuth onAuthComplete={() => {
-                Alert.alert('Ready', 'You can now use the sync feature below');
-              }} />
+
+              <View style={styles.selectedInfo}>
+                <Text style={styles.selectedLabel}>Bucket</Text>
+                <Text style={styles.selectedValue}>tournament-players</Text>
+                <Text style={styles.selectedLabel}>
+                  Supabase URL & anon key: {supabaseReady ? 'configured' : 'missing'}
+                </Text>
+              </View>
+
+              {!supabaseReady && (
+                <View style={styles.warningCard}>
+                  <Text style={styles.warningText}>Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env to enable sync.</Text>
+                </View>
+              )}
             </>
           )}
         </View>
@@ -364,7 +357,7 @@ export default function SettingsScreen({ onBack }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Sync & Status</Text>
           <Text style={styles.sectionDescription}>
-            Bi-directional sync: Upload local photos and download missing photos from Google Drive
+            Bi-directional sync: Upload local photos and download missing photos from Supabase
           </Text>
           
           {/* Photo Stats */}
@@ -395,8 +388,24 @@ export default function SettingsScreen({ onBack }) {
               <Text style={styles.syncButtonText}>Sync Now</Text>
             )}
           </Pressable>
+
+          <Pressable
+            style={styles.clearButtonAlt}
+            onPress={() => setShowPhotoBrowser(true)}
+          >
+            <Text style={styles.clearButtonAltText}>View Local Photos</Text>
+          </Pressable>
         </View>
       </ScrollView>
+
+      <Modal visible={showPhotoBrowser} animationType="slide" onRequestClose={() => setShowPhotoBrowser(false)}>
+        <PhotoBrowserScreen
+          onClose={() => setShowPhotoBrowser(false)}
+          onCleared={async () => {
+            await loadPhotoStats();
+          }}
+        />
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -621,6 +630,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  warningCard: {
+    backgroundColor: '#4b5563',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+    marginTop: 8,
+  },
+  warningText: {
+    color: '#fef3c7',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   downloadButton: {
     backgroundColor: '#10b981',
     paddingVertical: 12,
@@ -634,6 +656,20 @@ const styles = StyleSheet.create({
   downloadButtonText: {
     color: '#e2e8f0',
     fontWeight: '600',
+    fontSize: 14,
+  },
+  clearButtonAlt: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+    backgroundColor: 'transparent',
+  },
+  clearButtonAltText: {
+    color: '#38bdf8',
+    fontWeight: '700',
     fontSize: 14,
   },
 });

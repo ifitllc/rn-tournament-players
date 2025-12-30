@@ -65,3 +65,11 @@ export async function markUploaded(filePath) {
   const next = pending.filter((p) => p !== filePath);
   await AsyncStorage.setItem(PENDING_UPLOADS_KEY, JSON.stringify(next));
 }
+
+export async function clearLocalPhotos() {
+  // Remove photo dir and pending uploads list
+  await FileSystem.deleteAsync(PHOTO_DIR, { idempotent: true });
+  await AsyncStorage.removeItem(PENDING_UPLOADS_KEY);
+  // Recreate directory for future saves
+  await ensureDir();
+}

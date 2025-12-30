@@ -1,66 +1,40 @@
 # Tournament Players - React Native App
 
-A React Native application for managing tournament players with photo capture, Google Drive sync, and tournament management.
+A React Native application for managing tournament players with photo capture and Supabase-backed storage.
 
 ## Features
 
-- 📸 **Photo Capture** - Take player photos with manual crop functionality
-- ☁️ **Google Drive Sync** - Bi-directional photo synchronization
+- 📸 **Photo Capture** - Take player photos with manual crop
+- ☁️ **Supabase Sync** - Upload/download photos from a Supabase bucket with validation
 - 🏆 **Tournament Management** - Select and download player lists from Omnipong
 - 👥 **Manual Player Addition** - Add players not registered in the tournament system
-- 🔍 **Search** - Quick player search functionality
-- 🔐 **OAuth Authentication** - Secure Google Drive access
+- 🔍 **Search** - Quickly search players
+- 🗂️ **Local Photo Browser** - Review, delete all, or delete empty photo files
 
 ## Quick Start
 
-### 1. Install Dependencies
-
-```bash
-npm install
-```
-
-### 2. Configure Environment Variables
-
-```bash
-# Copy the example environment file
-cp .env.example .env
-
-# Edit .env and add your Google Client ID
-nano .env
-```
-
-Add your credentials:
-```
-EXPO_PUBLIC_GOOGLE_CLIENT_ID=YOUR_CLIENT_ID.apps.googleusercontent.com
-```
-
-See [Environment Setup Guide](docs/environment-setup.md) for detailed instructions.
-
-### 3. Get Google OAuth Credentials
-
-Follow the [OAuth Setup Guide](docs/oauth-setup-guide.md) to:
-1. Create a Google Cloud project
-2. Enable Google Drive API
-3. Create OAuth 2.0 credentials
-4. Configure redirect URIs
-
-### 4. Start the Development Server
-
-```bash
-npm start
-```
-
-Then:
-- Press `i` for iOS simulator
-- Press `a` for Android emulator
-- Scan QR code with Expo Go app
+1. Install dependencies
+   ```bash
+   npm install
+   ```
+2. Configure environment variables
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Supabase credentials
+   ```
+   See [Environment Setup Guide](docs/environment-setup.md) for details.
+3. Start the development server
+   ```bash
+   npm start
+   ```
+   - Press `i` for iOS simulator
+   - Press `a` for Android emulator
+   - Or scan the QR code with Expo Go
 
 ## Project Structure
 
 ```
 ├── src/
-│   ├── components/
-│   │   └── GoogleDriveAuth.js      # OAuth authentication component
 │   ├── helpers/
 │   │   ├── imageUtils.js           # Image manipulation utilities
 │   │   └── utils.js                # General utilities
@@ -68,18 +42,19 @@ Then:
 │   │   └── useBackgroundSync.js    # Background sync hook
 │   ├── screens/
 │   │   ├── PlayersScreen.js        # Main player list screen
-│   │   └── SettingsScreen.js       # Settings and configuration
+│   │   ├── SettingsScreen.js       # Settings and configuration
+│   │   └── PhotoBrowserScreen.js   # Local photo browser and cleanup
 │   ├── services/
 │   │   ├── omnipongService.js      # Tournament data fetching
-│   │   └── gdriveService.native.js # Google Drive API
+│   │   └── supabaseService.js      # Supabase storage integration
 │   └── storage/
 │       └── photoStore.js           # Local photo storage
 ├── docs/
-│   ├── environment-setup.md        # Environment variable guide
-│   ├── oauth-setup-guide.md        # Google OAuth setup
-│   └── google-drive-setup.md       # Drive integration details
+│   ├── environment-setup.md        # Supabase environment variable guide
+│   ├── oauth-setup-guide.md        # Deprecated (Google OAuth removed)
+│   └── google-drive-setup.md       # Deprecated (Google Drive removed)
 ├── scripts/
-│   └── setup-eas-env.sh           # EAS environment setup script
+│   └── setup-eas-env.sh            # EAS environment setup script
 ├── .env.example                    # Example environment file
 └── eas.json                        # EAS build configuration
 ```
@@ -87,135 +62,71 @@ Then:
 ## Usage
 
 ### Select Tournament
-
 1. Tap the ⚙️ (gear) icon
 2. Go to "Select Tournament"
 3. Choose your tournament from the list
 4. Tap "Download Players" to fetch the roster
 
 ### Take Player Photos
-
 1. Tap on a player name
 2. Tap "Take Photo"
-3. Capture the photo
-4. Drag the crop box to adjust
-5. Tap "Use Photo"
+3. Capture the photo and adjust the crop
+4. Save to store locally and sync later
 
-### Sync with Google Drive
+### Sync with Supabase
+1. Configure Supabase credentials in `.env`
+2. Use sync controls in Settings (or background sync) to upload/download
+3. The app validates downloads (>1KB and non-HTML) to avoid bad files
 
-1. Go to Settings
-2. Authenticate with Google Drive
-3. Tap "Sync Now" to upload/download photos
-
-### Add Manual Players
-
-1. Go to Settings > Manual Players
-2. Enter player name
-3. Tap "Add"
+### Manage Local Photos
+- Open Settings → "View Local Photos" to browse cached files
+- Use "Delete All" to clear everything or "Delete Empty" to remove tiny/invalid files
 
 ## Building for Production
 
-### Configure EAS
-
+Configure EAS secrets (Supabase URL, anon key, bucket) then build:
 ```bash
-# Run the setup script to configure environment variables
-npm run setup-eas
-
-# Or manually
-./scripts/setup-eas-env.sh
-```
-
-### Build
-
-```bash
-# Install EAS CLI
 npm install -g eas-cli
-
 # Login
+
 eas login
-
 # Build for iOS
-eas build --platform ios --profile production
 
+eas build --platform ios --profile production
 # Build for Android
+
 eas build --platform android --profile production
 ```
-
 See [EAS Build Documentation](https://docs.expo.dev/build/introduction/) for more details.
 
 ## Development
 
-### Run on Device
-
 ```bash
 # iOS
 npm run ios
-
 # Android
 npm run android
-```
-
-### Clear Cache
-
-```bash
+# Clear cache
 expo start -c
-```
-
-### View Logs
-
-```bash
-# iOS
-npx react-native log-ios
-
-# Android
-npx react-native log-android
 ```
 
 ## Configuration
 
-### Environment Variables
-
-See [Environment Setup Guide](docs/environment-setup.md)
-
-### Google OAuth
-
-See [OAuth Setup Guide](docs/oauth-setup-guide.md)
-
-### Google Drive
-
-See [Google Drive Setup Guide](docs/google-drive-setup.md)
+- Environment variables: [docs/environment-setup.md](docs/environment-setup.md)
+- Supabase bucket: `EXPO_PUBLIC_SUPABASE_BUCKET` (defaults to `tournament-players`)
 
 ## Troubleshooting
 
-### Camera Not Working
-- Ensure camera permissions are granted
-- Check that expo-camera is installed
-- Restart the app
-
-### Google Drive Auth Failed
-- Verify Client ID in `.env`
-- Check redirect URI configuration
-- See [OAuth Setup Guide](docs/oauth-setup-guide.md)
-
-### Photos Not Syncing
-- Authenticate with Google Drive first
-- Check internet connection
-- Verify folder ID is correct
-
-### Players Not Loading
-- Select a tournament in Settings
-- Tap "Download Players"
-- Check internet connection
+- **Camera not working**: ensure camera permissions are granted and `expo-camera` is installed
+- **Supabase download fails**: confirm URL/anon key/bucket in `.env` and network connectivity
+- **Players not loading**: select a tournament in Settings and tap "Download Players"
 
 ## Technologies
 
-- **Expo SDK 54** - React Native framework
-- **React Native 0.81** - Mobile framework
-- **expo-camera** - Camera access
-- **expo-image-manipulator** - Image cropping
-- **expo-auth-session** - OAuth 2.0 flow
-- **expo-file-system** - File storage
-- **AsyncStorage** - Local data persistence
+- **Expo SDK 54** / **React Native 0.81**
+- **Supabase JS** for storage access
+- **expo-camera**, **expo-image-manipulator**, **expo-file-system** for capture and storage
+- **AsyncStorage** for local data persistence
 
 ## License
 
@@ -223,7 +134,7 @@ ISC
 
 ## Support
 
-For issues and questions, please check the documentation in the `docs/` folder:
+For issues and questions, see the docs in the `docs/` folder:
 - [Environment Setup](docs/environment-setup.md)
-- [OAuth Setup](docs/oauth-setup-guide.md)
-- [Google Drive Setup](docs/google-drive-setup.md)
+- [Google Drive Setup](docs/google-drive-setup.md) (deprecated)
+- [OAuth Setup](docs/oauth-setup-guide.md) (deprecated)

@@ -39,8 +39,9 @@ export default function useBackgroundSync(uploader, intervalMs = DEFAULT_INTERVA
 }
 
 function splitPath(fullPath) {
-  const parts = fullPath.split('/').filter(Boolean);
-  const fileName = parts.pop() || '';
-  const dir = `/${parts.join('/')}`;
-  return { dir, name: fileName };
+  const lastSlash = fullPath.lastIndexOf('/');
+  if (lastSlash === -1) return { dir: '', name: fullPath };
+  const dir = fullPath.slice(0, lastSlash);
+  const name = fullPath.slice(lastSlash + 1);
+  return { dir, name };
 }
