@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
-import { listLocalPhotos, markUploaded } from '../storage/photoStore.js';
+import { listLocalPhotos, markUploaded, getPendingUploads } from '../storage/photoStore.js';
 import { composeImageFileName } from '../helpers/utils.js';
 
 const BUCKET = 'tournament-players';
@@ -20,6 +20,11 @@ function sleep(ms) {
 function getConfig() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl;
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || Constants.expoConfig?.extra?.supabaseAnonKey;
+
+  if (__DEV__) {
+    const prefix = anonKey ? anonKey.slice(0, 8) : 'missing';
+    console.log('Supabase config (dev)', { url, bucket: BUCKET, anonPrefix: prefix });
+  }
 
   if (!url || !anonKey) {
     throw new Error('Supabase credentials missing. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
@@ -103,20 +108,31 @@ async function isValidImageFile(filePath) {
   const size = info.size || 0;
   if (size < 1024) return false; // too small, likely error/empty
 
-  // If large (>200KB), assume valid to avoid reading big files into memory
-  if (size > 200 * 1024) return true;
-
   try {
-    const content = await FileSystem.readAsStringAsync(filePath, {
-      encoding: FileSystem.EncodingType.UTF8,
+    // Read as base64 to inspect magic bytes without assuming text encoding
+    const base64 = await FileSystem.readAsStringAsync(filePath, {
+      encoding: FileSystem.EncodingType.Base64,
     });
-    const head = content.slice(0, 4096).toLowerCase();
-    if (head.includes('<html') || head.includes('<!doctype') || head.includes('access denied') || head.includes('signature does not match')) {
+    const head = base64.slice(0, 32);
+    const looksPng = head.startsWith('iVBORw0KGgo'); // PNG signature
+    const looksJpg = head.startsWith('/9j/'); // JPEG signature
+    if (!looksPng && !looksJpg) {
       return false;
     }
+
+    // For small files, also guard against HTML/error bodies
+    if (size <= 512 * 1024) {
+      const utf8 = await FileSystem.readAsStringAsync(filePath, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      const textHead = utf8.slice(0, 4096).toLowerCase();
+      if (textHead.includes('<html') || textHead.includes('<!doctype') || textHead.includes('access denied') || textHead.includes('signature does not match')) {
+        return false;
+      }
+    }
   } catch (_) {
-    // If reading fails (binary), assume it's fine as long as size is reasonable
-    return true;
+    // If inspection fails but size is reasonable, assume valid
+    return size > 1024;
   }
 
   return true;
@@ -132,6 +148,13 @@ async function ensurePhotoDir() {
 async function uploadFileFromPath(localPath, fileName) {
   const { url, anonKey } = getConfig();
   const uploadUrl = `${url}/storage/v1/object/${BUCKET}/${encodeURIComponent(fileName)}`;
+  if (__DEV__) {
+    console.log('Supabase upload request', {
+      uploadUrl,
+      fileName,
+      anonPrefix: anonKey.slice(0, 8),
+    });
+  }
   const response = await withRetry(
     () =>
       runWithRateLimit(() =>
@@ -270,19 +293,19 @@ async function downloadFile(fileName) {
 }
 
 export async function uploadAllPhotos(onProgress) {
-  const localPhotos = await listLocalPhotos();
-  if (localPhotos.length === 0) {
+  const pending = await getPendingUploads();
+  if (pending.length === 0) {
     return { uploaded: 0, failed: 0 };
   }
 
   let uploaded = 0;
   let failed = 0;
 
-  for (let i = 0; i < localPhotos.length; i += 1) {
-    const path = localPhotos[i];
+  for (let i = 0; i < pending.length; i += 1) {
+    const path = pending[i];
     const fileName = path.split('/').pop();
     try {
-      if (onProgress) onProgress(`Uploading ${i + 1}/${localPhotos.length}`);
+      if (onProgress) onProgress(`Uploading ${i + 1}/${pending.length}`);
       await uploadFileFromPath(path, fileName);
       await markUploaded(path);
       uploaded += 1;

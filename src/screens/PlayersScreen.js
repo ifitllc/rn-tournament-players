@@ -4,11 +4,10 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getPlayers, getTournaments } from '../services/omnipongService.js';
-import { composeImageFileName } from '../helpers/utils.js';
 import { getActiveTournamentName } from '../helpers/utils.js';
-import { photoExists, savePhoto } from '../storage/photoStore.js';
+import { photoExists, savePhoto, markUploaded } from '../storage/photoStore.js';
 import useBackgroundSync from '../hooks/useBackgroundSync.js';
-import { uploadAllPhotos, uploadSinglePhoto, hasSupabaseConfig } from '../services/supabaseService.js';
+import { uploadSinglePhoto, hasSupabaseConfig } from '../services/supabaseService.js';
 import SettingsScreen from './SettingsScreen.js';
 import PhotoBrowserScreen from './PhotoBrowserScreen.js';
 
@@ -268,9 +267,19 @@ export default function PlayersScreen() {
         Alert.alert('Supabase not configured', 'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env, then reload the app.');
         return;
       }
-      console.log('Starting manual sync...');
-      await uploadAllPhotos();
-      console.log('Sync completed successfully');
+      if (!selected || !selectedPhotoUri) {
+        Alert.alert('No photo to upload', 'Take or select a photo for this player first.');
+        return;
+      }
+
+      const lastSlash = selectedPhotoUri.lastIndexOf('/');
+      const dir = lastSlash === -1 ? '' : selectedPhotoUri.slice(0, lastSlash);
+      const name = lastSlash === -1 ? selectedPhotoUri : selectedPhotoUri.slice(lastSlash + 1);
+
+      console.log('Starting manual sync for player', selected.name, '->', name);
+      await uploadSinglePhoto(dir, name);
+      await markUploaded(selectedPhotoUri);
+      console.log('Player photo synced successfully');
     } catch (err) {
       console.error('Sync failed:', err.message);
     }
