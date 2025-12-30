@@ -5,6 +5,17 @@ import { composeImageFileName } from '../helpers/utils.js';
 
 const BUCKET = 'tournament-players';
 const PHOTO_DIR = `${FileSystem.documentDirectory}photos/`;
+const RATE_LIMIT_MS = 200;
+const RETRY_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 400;
+const RETRY_MAX_DELAY_MS = 4000;
+
+let rateLimiter = Promise.resolve();
+let lastRequestTime = 0;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function getConfig() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl;
@@ -37,6 +48,53 @@ function joinPath(dir, name) {
 function basename(path) {
   const idx = path.lastIndexOf('/');
   return idx === -1 ? path : path.slice(idx + 1);
+}
+
+async function runWithRateLimit(task) {
+  const start = rateLimiter.catch(() => {});
+  const work = start.then(async () => {
+    const now = Date.now();
+    const wait = lastRequestTime + RATE_LIMIT_MS - now;
+    if (wait > 0) {
+      await sleep(wait);
+    }
+    const result = await task();
+    lastRequestTime = Date.now();
+    return result;
+  });
+  rateLimiter = work.catch(() => {});
+  return work;
+}
+
+function isRetryableStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+async function withRetry(task, { label = 'operation', attempts = RETRY_ATTEMPTS, shouldRetry } = {}) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const result = await task();
+      const needsRetry = shouldRetry ? shouldRetry(result) : false;
+      if (!needsRetry) {
+        return result;
+      }
+      lastError = new Error(`Retryable response for ${label}`);
+    } catch (err) {
+      lastError = err;
+    }
+
+    if (attempt === attempts) {
+      break;
+    }
+
+    const delay = Math.min(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1), RETRY_MAX_DELAY_MS);
+    console.warn(`Retrying ${label} (attempt ${attempt + 1}/${attempts}) after ${delay}ms`, lastError?.message);
+    await sleep(delay);
+  }
+
+  throw lastError;
 }
 
 async function isValidImageFile(filePath) {
@@ -74,15 +132,24 @@ async function ensurePhotoDir() {
 async function uploadFileFromPath(localPath, fileName) {
   const { url, anonKey } = getConfig();
   const uploadUrl = `${url}/storage/v1/object/${BUCKET}/${encodeURIComponent(fileName)}`;
-  const response = await FileSystem.uploadAsync(uploadUrl, localPath, {
-    httpMethod: 'POST',
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    headers: {
-      ...buildHeaders(anonKey),
-      'Content-Type': getMimeType(fileName),
-      'x-upsert': 'true',
+  const response = await withRetry(
+    () =>
+      runWithRateLimit(() =>
+        FileSystem.uploadAsync(uploadUrl, localPath, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            ...buildHeaders(anonKey),
+            'Content-Type': getMimeType(fileName),
+            'x-upsert': 'true',
+          },
+        }),
+      ),
+    {
+      label: `upload ${fileName}`,
+      shouldRetry: (res) => isRetryableStatus(res.status),
     },
-  });
+  );
 
   if (response.status >= 200 && response.status < 300) {
     return `${url}/storage/v1/object/public/${BUCKET}/${encodeURIComponent(fileName)}`;
@@ -99,19 +166,28 @@ async function listRemotePhotos() {
     hasAnonKey: !!anonKey,
     anonKeyPrefix: anonKey ? anonKey.slice(0, 6) : 'none',
   });
-  const response = await fetch(`${url}/storage/v1/object/list/${BUCKET}`, {
-    method: 'POST',
-    headers: {
-      ...buildHeaders(anonKey),
-      'Content-Type': 'application/json',
+  const response = await withRetry(
+    () =>
+      runWithRateLimit(() =>
+        fetch(`${url}/storage/v1/object/list/${BUCKET}`, {
+          method: 'POST',
+          headers: {
+            ...buildHeaders(anonKey),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prefix: '',
+            limit: 1000,
+            offset: 0,
+            sortBy: { column: 'name', order: 'asc' },
+          }),
+        }),
+      ),
+    {
+      label: 'list photos',
+      shouldRetry: (res) => isRetryableStatus(res.status),
     },
-    body: JSON.stringify({
-      prefix: '',
-      limit: 1000,
-      offset: 0,
-      sortBy: { column: 'name', order: 'asc' },
-    }),
-  });
+  );
 
   if (!response.ok) {
     const message = await response.text();
@@ -149,7 +225,13 @@ async function downloadFile(fileName) {
   const tryDownload = async (dlUrl, label, withHeaders) => {
     console.log('Supabase download URL:', dlUrl, `(mode: ${label}, headers: ${withHeaders})`);
     const options = withHeaders ? { headers: buildHeaders(anonKey) } : undefined;
-    const res = await FileSystem.downloadAsync(dlUrl, targetPath, options);
+    const res = await withRetry(
+      () => runWithRateLimit(() => FileSystem.downloadAsync(dlUrl, targetPath, options)),
+      {
+        label: `download ${fileName} (${label})`,
+        shouldRetry: (r) => isRetryableStatus(r.status),
+      },
+    );
     return res;
   };
 
