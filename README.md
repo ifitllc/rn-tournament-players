@@ -8,7 +8,7 @@ A React Native application for managing tournament players with photo capture an
 - ☁️ **Supabase Sync** - Upload/download photos from a Supabase bucket with validation
 - 🏆 **Tournament Management** - Select and download player lists from Omnipong
 - 👥 **Manual Player Addition** - Add players not registered in the tournament system
-- 🔍 **Search** - Quickly search players
+- �� **Search** - Quickly search players
 - 🗂️ **Local Photo Browser** - Review, delete all, or delete empty photo files
 
 ## Quick Start
@@ -35,6 +35,8 @@ A React Native application for managing tournament players with photo capture an
 
 ```
 ├── src/
+│   ├── components/
+│   │   └── GoogleDriveAuth.js      # Deprecated stub to avoid stale imports
 │   ├── helpers/
 │   │   ├── imageUtils.js           # Image manipulation utilities
 │   │   └── utils.js                # General utilities
@@ -46,7 +48,8 @@ A React Native application for managing tournament players with photo capture an
 │   │   └── PhotoBrowserScreen.js   # Local photo browser and cleanup
 │   ├── services/
 │   │   ├── omnipongService.js      # Tournament data fetching
-│   │   └── supabaseService.js      # Supabase storage integration
+│   │   ├── supabaseService.js      # Supabase storage integration
+│   │   └── gdriveService.native.js # Deprecated stub (Google Drive removed)
 │   └── storage/
 │       └── photoStore.js           # Local photo storage
 ├── docs/

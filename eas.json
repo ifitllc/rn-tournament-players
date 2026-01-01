@@ -11,6 +11,9 @@
         "EXPO_PUBLIC_SUPABASE_URL": "https://woedxvcucmgeyfoocvnr.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_CrIp_-jybjLxQzexFIMqhQ_vSXLjXOt",
         "EXPO_PUBLIC_SUPABASE_STORAGE_BUCKET": "tournament-players"
+      },
+      "ios": {
+        "simulator": true
       }
     },
     "preview": {
