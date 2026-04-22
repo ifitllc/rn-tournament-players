@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View, Dimensions, Animated, PanResponder, Alert } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getPlayers, getTournaments } from '../services/omnipongService.js';
 import { getActiveTournamentName } from '../helpers/utils.js';
@@ -22,43 +23,71 @@ export default function PlayersScreen() {
   const [selected, setSelected] = useState(null);
   const [selectedPhotoUri, setSelectedPhotoUri] = useState(null);
   const [playerPhotos, setPlayerPhotos] = useState({});
+  const [syncing, setSyncing] = useState(false);
   const [cameraVisible, setCameraVisible] = useState(false);
   const [cameraType, setCameraType] = useState('back');
+  const [zoom, setZoom] = useState(0);
   const [capturedUri, setCapturedUri] = useState(null);
   const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 });
+  const [cropScale, setCropScale] = useState(1);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [showSettings, setShowSettings] = useState(false);
   const [showPhotoBrowser, setShowPhotoBrowser] = useState(false);
+  const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 });
 
   const cameraRef = useRef(null);
-  const translateX = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(0)).current;
+  const animX = useRef(new Animated.Value(0)).current;
+  const animY = useRef(new Animated.Value(0)).current;
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderMove: (_, gestureState) => {
-        translateX.setValue(gestureState.dx);
-        translateY.setValue(gestureState.dy);
+        const cropSize = (SCREEN_WIDTH - 64) * cropScaleRef.current;
+        const displayed = getDisplayedImageSize();
+        const newX = Math.max(0, Math.min(cropPositionRef.current.x + gestureState.dx, displayed.width - cropSize));
+        const newY = Math.max(0, Math.min(cropPositionRef.current.y + gestureState.dy, displayed.height - cropSize));
+        animX.setValue(newX);
+        animY.setValue(newY);
       },
       onPanResponderRelease: (_, gestureState) => {
-        const cropSize = SCREEN_WIDTH - 64;
-        const displayWidth = SCREEN_WIDTH - 32;
-        const aspectRatio = imageSize.current.width / imageSize.current.height;
-        const displayHeight = displayWidth / aspectRatio;
-        
-        const newX = Math.max(0, Math.min(gestureState.dx + cropPositionRef.current.x, displayWidth - cropSize));
-        const newY = Math.max(0, Math.min(gestureState.dy + cropPositionRef.current.y, displayHeight - cropSize));
-        
-        setCropPosition({ x: newX, y: newY });
+        const cropSize = (SCREEN_WIDTH - 64) * cropScaleRef.current;
+        const displayed = getDisplayedImageSize();
+        const newX = Math.max(0, Math.min(cropPositionRef.current.x + gestureState.dx, displayed.width - cropSize));
+        const newY = Math.max(0, Math.min(cropPositionRef.current.y + gestureState.dy, displayed.height - cropSize));
         cropPositionRef.current = { x: newX, y: newY };
-        translateX.setValue(0);
-        translateY.setValue(0);
+        setCropPosition({ x: newX, y: newY });
       },
     })
   ).current;
   const cropPositionRef = useRef({ x: 0, y: 0 });
+  const cropScaleRef = useRef(1);
   const imageSize = useRef({ width: 0, height: 0 });
+  const containerSize = useRef({ width: 0, height: 0 });
   const { syncOnce } = useBackgroundSync(uploadSinglePhoto);
+
+  const BASE_CROP = SCREEN_WIDTH - 64;
+  const DISPLAY_WIDTH = SCREEN_WIDTH - 32;
+
+  function getDisplayedImageSize() {
+    const cw = containerSize.current.width || DISPLAY_WIDTH;
+    const ch = containerSize.current.height || 400;
+    const iw = imageSize.current.width || 1;
+    const ih = imageSize.current.height || 1;
+    const scale = Math.min(cw / iw, ch / ih);
+    return { width: iw * scale, height: ih * scale };
+  }
+
+  function getImageOffset() {
+    const cw = containerSize.current.width || DISPLAY_WIDTH;
+    const ch = containerSize.current.height || 400;
+    const displayed = getDisplayedImageSize();
+    return {
+      x: (cw - displayed.width) / 2,
+      y: (ch - displayed.height) / 2,
+    };
+  }
+
+  const clampCropScale = (val) => Math.max(0.2, Math.min(1.4, val));
 
   useEffect(() => {
     loadPlayers();
@@ -71,6 +100,29 @@ export default function PlayersScreen() {
       setSelectedPhotoUri(uri);
     })();
   }, [selected]);
+
+  // Keep list avatars in sync with the currently selected photo state
+  useEffect(() => {
+    if (selected && selectedPhotoUri) {
+      setPlayerPhotos((prev) => ({ ...prev, [selected.name]: selectedPhotoUri }));
+    }
+  }, [selected, selectedPhotoUri]);
+
+  useEffect(() => {
+    if (!capturedUri || imageSize.current.width === 0) return;
+    const cropSize = BASE_CROP * cropScaleRef.current;
+    const displayed = getDisplayedImageSize();
+    const maxX = Math.max(0, displayed.width - cropSize);
+    const maxY = Math.max(0, displayed.height - cropSize);
+    const clampedX = Math.max(0, Math.min(cropPositionRef.current.x, maxX));
+    const clampedY = Math.max(0, Math.min(cropPositionRef.current.y, maxY));
+    if (clampedX !== cropPositionRef.current.x || clampedY !== cropPositionRef.current.y) {
+      setCropPosition({ x: clampedX, y: clampedY });
+      cropPositionRef.current = { x: clampedX, y: clampedY };
+      animX.setValue(clampedX);
+      animY.setValue(clampedY);
+    }
+  }, [cropScale, capturedUri]);
 
   // Load photos for all players
   useEffect(() => {
@@ -149,7 +201,15 @@ export default function PlayersScreen() {
       console.error('Camera permission denied');
       return;
     }
+    setZoom(0); // reset zoom each time camera opens
     setCameraVisible(true);
+  }
+
+  function handleZoomStep(delta) {
+    setZoom((z) => {
+      const next = Math.max(0, Math.min(1, z + delta));
+      return Number(next.toFixed(3));
+    });
   }
 
   async function handleCapture() {
@@ -160,22 +220,24 @@ export default function PlayersScreen() {
     try {
       const raw = await cameraRef.current.takePictureAsync({ quality: 0.8, skipProcessing: true });
       setCameraVisible(false);
+      setCropScale(1);
+      cropScaleRef.current = 1;
       
       // Get image dimensions
       Image.getSize(raw.uri, (width, height) => {
         imageSize.current = { width, height };
         setCapturedUri(raw.uri);
         // Center the crop box initially
-        const cropSize = SCREEN_WIDTH - 64;
-        const displayWidth = SCREEN_WIDTH - 32;
+        const cropSize = BASE_CROP;
+        const displayWidth = DISPLAY_WIDTH;
         const aspectRatio = width / height;
         const displayHeight = displayWidth / aspectRatio;
         const initialX = (displayWidth - cropSize) / 2;
         const initialY = (displayHeight - cropSize) / 2;
         setCropPosition({ x: initialX, y: initialY });
         cropPositionRef.current = { x: initialX, y: initialY };
-        translateX.setValue(0);
-        translateY.setValue(0);
+        animX.setValue(initialX);
+        animY.setValue(initialY);
       });
     } catch (err) {
       console.error('Capture failed', err.message);
@@ -187,14 +249,12 @@ export default function PlayersScreen() {
     
     try {
       // Calculate crop based on dragged position
-      const cropSize = SCREEN_WIDTH - 64;
-      const displayWidth = SCREEN_WIDTH - 32;
-      const aspectRatio = imageSize.current.width / imageSize.current.height;
-      const displayHeight = displayWidth / aspectRatio;
+      const cropSize = BASE_CROP * cropScaleRef.current;
+      const displayed = getDisplayedImageSize();
       
       // Convert screen coordinates to image coordinates
-      const scaleX = imageSize.current.width / displayWidth;
-      const scaleY = imageSize.current.height / displayHeight;
+      const scaleX = imageSize.current.width / displayed.width;
+      const scaleY = imageSize.current.height / displayed.height;
       
       const originX = Math.max(0, Math.min(cropPosition.x * scaleX, imageSize.current.width - cropSize * scaleX));
       const originY = Math.max(0, Math.min(cropPosition.y * scaleY, imageSize.current.height - cropSize * scaleY));
@@ -217,6 +277,7 @@ export default function PlayersScreen() {
       
       const savedPath = await savePhoto(selected.name, cropped.uri);
       setSelectedPhotoUri(savedPath);
+      setPlayerPhotos((prev) => ({ ...prev, [selected.name]: savedPath }));
       setCapturedUri(null);
       await syncOnce();
     } catch (err) {
@@ -226,6 +287,40 @@ export default function PlayersScreen() {
 
   function handleCropCancel() {
     setCapturedUri(null);
+  }
+
+  function adjustCropScale(delta) {
+    setCropScale((prev) => {
+      const next = clampCropScale(prev + delta);
+      cropScaleRef.current = next;
+      return Number(next.toFixed(2));
+    });
+  }
+
+  async function handlePickFromGallery() {
+    if (!selected) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setCropScale(1);
+    cropScaleRef.current = 1;
+    Image.getSize(asset.uri, (width, height) => {
+      imageSize.current = { width, height };
+      setCapturedUri(asset.uri);
+      const cropSize = BASE_CROP;
+      const displayWidth = DISPLAY_WIDTH;
+      const aspectRatio = width / height;
+      const displayHeight = displayWidth / aspectRatio;
+      const initialX = (displayWidth - cropSize) / 2;
+      const initialY = (displayHeight - cropSize) / 2;
+      setCropPosition({ x: initialX, y: initialY });
+      cropPositionRef.current = { x: initialX, y: initialY };
+      animX.setValue(initialX);
+      animY.setValue(initialY);
+    });
   }
 
   async function ensureCameraPermission() {
@@ -272,6 +367,8 @@ export default function PlayersScreen() {
         return;
       }
 
+      setSyncing(true);
+
       const lastSlash = selectedPhotoUri.lastIndexOf('/');
       const dir = lastSlash === -1 ? '' : selectedPhotoUri.slice(0, lastSlash);
       const name = lastSlash === -1 ? selectedPhotoUri : selectedPhotoUri.slice(lastSlash + 1);
@@ -280,8 +377,12 @@ export default function PlayersScreen() {
       await uploadSinglePhoto(dir, name);
       await markUploaded(selectedPhotoUri);
       console.log('Player photo synced successfully');
+      Alert.alert('Upload complete', 'Photo uploaded to Supabase and will stay in sync.');
     } catch (err) {
       console.error('Sync failed:', err.message);
+      Alert.alert('Sync failed', err.message || 'Please try again.');
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -369,14 +470,21 @@ export default function PlayersScreen() {
               )}
               <View style={styles.actions}>
                 <Pressable style={styles.button} onPress={() => openCameraFor(selected)}>
-                  <Text style={styles.buttonText}>{selectedPhotoUri ? 'Retake Photo' : 'Take Photo'}</Text>
+                  <Text style={styles.buttonText}>{selectedPhotoUri ? 'Retake' : 'Camera'}</Text>
+                </Pressable>
+                <Pressable style={[styles.button, styles.galleryButton]} onPress={handlePickFromGallery}>
+                  <Text style={styles.buttonText}>Gallery</Text>
                 </Pressable>
                 {selectedPhotoUri && (
                   <Pressable style={[styles.button, styles.rotateButton]} onPress={handleRotatePhoto}>
                     <Text style={styles.buttonText}>🔄 Rotate</Text>
                   </Pressable>
                 )}
-                <Pressable style={[styles.button, styles.secondary]} onPress={handleSyncNow}>
+                <Pressable
+                  style={[styles.button, styles.secondary, syncing && styles.buttonDisabled]}
+                  onPress={handleSyncNow}
+                  disabled={syncing}
+                >
                   <Text style={styles.buttonText}>Sync Now</Text>
                 </Pressable>
               </View>
@@ -389,7 +497,23 @@ export default function PlayersScreen() {
 
           <Modal visible={cameraVisible} animationType="slide">
             <View style={styles.cameraContainer}>
-              <CameraView style={styles.camera} facing={cameraType} ref={cameraRef}>
+              <CameraView
+                style={styles.camera}
+                facing={cameraType}
+                ref={cameraRef}
+                enableZoomGesture
+                zoom={zoom}
+                onZoomChange={setZoom}
+              >
+                <View style={styles.zoomControls} pointerEvents="box-none">
+                  <Pressable style={styles.zoomButton} onPress={() => handleZoomStep(-0.05)}>
+                    <Text style={styles.zoomButtonText}>-</Text>
+                  </Pressable>
+                  <Text style={styles.zoomLabel}>{Math.round(zoom * 100)}%</Text>
+                  <Pressable style={styles.zoomButton} onPress={() => handleZoomStep(0.05)}>
+                    <Text style={styles.zoomButtonText}>+</Text>
+                  </Pressable>
+                </View>
                 <View style={styles.cameraControls}>
                   <Pressable style={styles.iconButton} onPress={() => setCameraType((t) => (t === 'back' ? 'front' : 'back'))}>
                     <Text style={styles.buttonText}>Flip</Text>
@@ -408,7 +532,24 @@ export default function PlayersScreen() {
           <Modal visible={!!capturedUri} animationType="slide">
         <View style={styles.cropContainer}>
           <Text style={styles.cropTitle}>Drag to Adjust Crop</Text>
-          <View style={styles.cropPreview}>
+          <View style={styles.cropSizeControls}>
+            <Pressable style={styles.sizeButton} onPress={() => adjustCropScale(-0.05)}>
+              <Text style={styles.buttonText}>–</Text>
+            </Pressable>
+            <Text style={styles.sizeLabel}>Box {Math.round(cropScale * 100)}%</Text>
+            <Pressable style={styles.sizeButton} onPress={() => adjustCropScale(0.05)}>
+              <Text style={styles.buttonText}>+</Text>
+            </Pressable>
+          </View>
+          <View style={styles.cropPreview} onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            containerSize.current = { width, height };
+            const displayed = getDisplayedImageSize();
+            setImageOffset({
+              x: (width - displayed.width) / 2,
+              y: (height - displayed.height) / 2,
+            });
+          }}>
             {capturedUri && (
               <Image 
                 source={{ uri: capturedUri }} 
@@ -416,18 +557,21 @@ export default function PlayersScreen() {
                 resizeMode="contain"
               />
             )}
-            <View style={styles.cropOverlay}>
+            <View style={[styles.cropOverlay, {
+              left: imageOffset.x,
+              top: imageOffset.y,
+              right: imageOffset.x,
+              bottom: imageOffset.y,
+            }]}>
               <Animated.View 
                 {...panResponder.panHandlers}
                 style={[
                   styles.cropBox,
                   {
-                    transform: [
-                      { translateX },
-                      { translateY },
-                    ],
-                    left: cropPosition.x,
-                    top: cropPosition.y,
+                    width: BASE_CROP * cropScale,
+                    height: BASE_CROP * cropScale,
+                    left: animX,
+                    top: animY,
                   },
                 ]}
               >
@@ -566,7 +710,9 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   button: { flex: 1, backgroundColor: '#2563eb', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
   secondary: { backgroundColor: '#334155' },
+  buttonDisabled: { opacity: 0.6 },
   rotateButton: { backgroundColor: '#8b5cf6' },
+  galleryButton: { backgroundColor: '#0891b2' },
   buttonText: { color: '#e2e8f0', fontWeight: '600' },
   cameraContainer: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
@@ -591,6 +737,34 @@ const styles = StyleSheet.create({
     paddingBottom: 34,
     alignItems: 'center',
   },
+  zoomControls: {
+    position: 'absolute',
+    right: 16,
+    top: 80,
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  zoomButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  zoomButtonText: {
+    color: '#e2e8f0',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  zoomLabel: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+  },
   captureText: { color: '#e2e8f0', fontWeight: '700', fontSize: 16 },
   cropContainer: {
     flex: 1,
@@ -605,6 +779,23 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 16,
   },
+  cropSizeControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  sizeButton: {
+    backgroundColor: '#1e293b',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  sizeLabel: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+  },
   cropPreview: {
     flex: 1,
     justifyContent: 'center',
@@ -616,12 +807,10 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   cropOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
   },
   cropBox: {
     position: 'absolute',
-    width: SCREEN_WIDTH - 64,
-    height: SCREEN_WIDTH - 64,
     borderWidth: 3,
     borderColor: '#38bdf8',
     borderRadius: 8,

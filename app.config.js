@@ -17,8 +17,9 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.fanyang.tournamentplayers",
-      buildNumber: "3",
+      buildNumber: "10",
       infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
         NSCameraUsageDescription: "This app needs camera access to take player photos for the tournament roster.",
         NSPhotoLibraryUsageDescription: "This app needs photo library access to save and manage player photos."
       }
@@ -29,7 +30,7 @@ export default {
         backgroundColor: "#0f172a"
       },
       package: "com.fanyang.tournamentplayers",
-      versionCode: 3,
+      versionCode: 10,
       permissions: [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",

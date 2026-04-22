@@ -8,6 +8,7 @@ import PhotoBrowserScreen from './PhotoBrowserScreen.js';
 
 const SELECTED_TOURNAMENT_KEY = '@selected_tournament';
 const MANUAL_PLAYERS_KEY = '@manual_players';
+const SEARCH_KEYWORD_KEY = '@search_keyword';
 
 export default function SettingsScreen({ onBack }) {
   const [tournaments, setTournaments] = useState([]);
@@ -15,6 +16,7 @@ export default function SettingsScreen({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [manualPlayers, setManualPlayers] = useState([]);
   const [newPlayerName, setNewPlayerName] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState('HCTT');
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState('');
   const [downloadingPlayers, setDownloadingPlayers] = useState(false);
@@ -46,12 +48,17 @@ export default function SettingsScreen({ onBack }) {
   async function loadSettings() {
     try {
       setLoading(true);
-      const [tournamentsData, selectedData, manualData] = await Promise.all([
-        getTournaments(),
+      const [selectedData, manualData, savedKeyword] = await Promise.all([
         AsyncStorage.getItem(SELECTED_TOURNAMENT_KEY),
         AsyncStorage.getItem(MANUAL_PLAYERS_KEY),
+        AsyncStorage.getItem(SEARCH_KEYWORD_KEY),
       ]);
 
+      const keyword = savedKeyword || 'HCTT';
+      setSearchKeyword(keyword);
+
+      const tournamentsData = await getTournaments({ keyword });
+      
       setTournaments(tournamentsData);
       
       if (selectedData) {
@@ -63,6 +70,24 @@ export default function SettingsScreen({ onBack }) {
       }
     } catch (err) {
       console.error('Failed to load settings:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSearch() {
+    try {
+      setLoading(true);
+      await AsyncStorage.setItem(SEARCH_KEYWORD_KEY, searchKeyword);
+      const tournamentsData = await getTournaments({ keyword: searchKeyword });
+      setTournaments(tournamentsData);
+      
+      if (tournamentsData.length === 0) {
+        Alert.alert('No Tournaments', `No tournaments found for "${searchKeyword}"`);
+      }
+    } catch (err) {
+      console.error('Search failed:', err.message);
+      Alert.alert('Error', 'Failed to search tournaments');
     } finally {
       setLoading(false);
     }
@@ -231,8 +256,24 @@ export default function SettingsScreen({ onBack }) {
           {tournamentSectionExpanded && (
             <>
               <Text style={styles.sectionDescription}>
-                Select tournament and download players, or add manual players
+                Search by organization code (e.g., HCTT, USATT) to find tournaments.
               </Text>
+
+              <View style={styles.searchForm}>
+                <TextInput
+                  placeholder="Org Code (e.g. HCTT)"
+                  placeholderTextColor="#94a3b8"
+                  value={searchKeyword}
+                  onChangeText={setSearchKeyword}
+                  style={styles.searchInput}
+                  onSubmitEditing={handleSearch}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                />
+                <Pressable style={styles.searchButton} onPress={handleSearch}>
+                  <Text style={styles.searchButtonText}>Find</Text>
+                </Pressable>
+              </View>
               
               {loading ? (
                 <ActivityIndicator color="#38bdf8" style={{ marginTop: 12 }} />
@@ -517,6 +558,32 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
     fontSize: 14,
     flex: 1,
+  },
+  searchForm: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: '#1e293b',
+    color: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  searchButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  searchButtonText: {
+    color: '#e2e8f0',
+    fontWeight: '600',
   },
   checkmark: {
     color: '#e2e8f0',
